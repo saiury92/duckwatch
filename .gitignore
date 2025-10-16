@@ -1,2 +1,7 @@
 __pycache__/
+data/db/
+data/parquet_out/
 .DS_Store
+venv/
+*.pyc
+.vscode/
