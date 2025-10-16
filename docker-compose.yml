@@ -1,0 +1,27 @@
+services:
+  duckwatch:
+    build: .
+    container_name: duckwatch
+    environment:
+      # You can override these paths if you want different mount points
+      WATCH_DIR: /data/watched_folder
+      PARQUET_DIR: /data/parquet_out
+      DUCKDB_DB: /data/db/mydb.duckdb
+    volumes:
+      - ./data/watched_folder:/data/watched_folder
+      - ./data/parquet_out:/data/parquet_out
+      - ./data/db:/data/db
+    restart: unless-stopped
+
+  # Optional: a CLI you can use to query the same DB file
+  duckdb-cli:
+    image: duckdb/duckdb:1.4.1
+    container_name: duckdb-cli
+    working_dir: /work
+    entrypoint: ["duckdb"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./data/db:/work
+      - ./data/parquet_out:/data/parquet_out
+    # Example: connect to /work/mydb.duckdb inside the shell

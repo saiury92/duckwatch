@@ -1,0 +1,7 @@
+.vscode
+.git
+__pycache__/
+*.pyc
+.parquet_tmp/
+.env
+venv/
