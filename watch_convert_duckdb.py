@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 import traceback
 from pathlib import Path
@@ -38,13 +39,37 @@ def wait_until_stable(path: Path) -> bool:
         return False
 
 def csv_to_parquet(csv_path: Path, parquet_path: Path):
-    parquet_path.parent.mkdir(parents=True, exist_ok=True)
     table = pacsv.read_csv(csv_path)  # let Arrow infer types
-    pq.write_table(table, parquet_path, compression=WRITE_COMPRESSION)
+
+    # Check if table has a 'date' column for partitioning
+    if 'date' in table.column_names:
+        # Get unique dates from the table
+        unique_dates = table['date'].unique().to_pylist()
+
+        # Clean up existing partition directories for these dates
+        for date_val in unique_dates:
+            partition_dir = parquet_path / f"date={date_val}"
+            if partition_dir.exists():
+                shutil.rmtree(partition_dir)
+                print(f"🗑️  Cleaned existing partition: {partition_dir}")
+
+        # Write partitioned parquet by date directly to PARQUET_DIR
+        pq.write_to_dataset(
+            table,
+            root_path=str(parquet_path),
+            partition_cols=['date'],
+            compression=WRITE_COMPRESSION,
+            existing_data_behavior='overwrite_or_ignore'
+        )
+    else:
+        # Fallback to single file if no date column
+        parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, parquet_path, compression=WRITE_COMPRESSION)
 
 def target_parquet_path(csv_path: Path) -> Path:
-    rel = csv_path.relative_to(WATCH_DIR)
-    return PARQUET_DIR.joinpath(rel).with_suffix(".parquet")
+    # For partitioned parquet, we'll use PARQUET_DIR as the root
+    # The actual partitioning will be handled by write_to_dataset
+    return PARQUET_DIR
 
 def init_duckdb():
     con = duckdb.connect(str(DUCKDB_DB))
@@ -61,7 +86,7 @@ def init_duckdb():
             CREATE VIEW IF NOT EXISTS all_data AS
             SELECT * FROM read_parquet('{glob_pattern}')
         """)
-        print(f"Created view for {PARQUET_DIR}")
+        print(f"Created view for partitioned parquet files in {PARQUET_DIR}")
     else:
         # No parquet files yet; skip creating the view for now
         print(f"No parquet files yet; skipping view creation for now.")
@@ -77,7 +102,7 @@ def ensure_view_exists_if_parquet_present():
     if not has_parquet:
         return
 
-    print(f"Creating view for {PARQUET_DIR}")
+    print(f"Creating view for partitioned parquet files in {PARQUET_DIR}")
     con = duckdb.connect(str(DUCKDB_DB))
     try:
         glob_pattern = str(PARQUET_DIR / "**/*.parquet").replace("'", "''")
